@@ -1,5 +1,5 @@
 import app from './src/app.js'
 
-app.listen(3000,()=>{
+app.listen(3000, () => {
     console.log("Server is port 3000");
 })
