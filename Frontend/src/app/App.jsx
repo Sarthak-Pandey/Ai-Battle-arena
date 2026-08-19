@@ -7,6 +7,7 @@ import LoadingState from '../components/LoadingState';
 import ChatInput from '../components/ChatInput';
 import '../index.css';
 
+
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [conversations, setConversations] = useState([]);
@@ -50,7 +51,7 @@ function App() {
     // In a real app, you would load the messages for this chat here
   };
 
-  const handleSendMessage = (text) => {
+  const handleSendMessage = async (text) => {
     // If this is the first message, create a new conversation
     if (!activeChatId) {
       const newChatId = Date.now().toString();
@@ -61,30 +62,59 @@ function App() {
     setCurrentProblem(text);
     setLoadingPhase('generating');
 
-    // Simulate AI Generation
-    setTimeout(() => {
-      setLoadingPhase('judging');
-      
-      // Simulate Judge Evaluation
-      setTimeout(() => {
-        const newMessage = {
-          problem: text,
-          solution_1: "### Solution 1\n\nTo implement a rate limiter, we can use the **Token Bucket** algorithm. This approach allows a certain number of requests (tokens) per time window. When a request comes in, we check if there are enough tokens. If so, we process it and remove a token. If not, we reject it.\n\n```python\nclass TokenBucket:\n    def __init__(self, capacity, fill_rate):\n        self.capacity = capacity\n        self.tokens = capacity\n        self.fill_rate = fill_rate\n        self.last_update = time.time()\n```\n\nFor a distributed system, we would store this state in Redis using Lua scripts to ensure atomic operations.",
-          solution_2: "### Solution 2\n\nThe most robust approach for a distributed rate limiter is the **Sliding Window Log** algorithm. Instead of buckets, we store a timestamp for each request in a sorted set in Redis. \n\nWhen a new request arrives, we:\n1. Remove all timestamps older than the window.\n2. Count the remaining elements.\n3. If the count exceeds the limit, reject.\n4. Otherwise, add the new timestamp and accept.\n\nWhile this requires more memory than a token bucket, it provides perfect accuracy without edge-case bursting.",
-          judge: {
-            solution_1_score: 8.5,
-            solution_2_score: 9.2,
-            solution_1_reasoning: "The Token Bucket implementation is efficient and standard, but the provided explanation lacks details on the Redis Lua script implementation which is critical for the distributed aspect.",
-            solution_2_reasoning: "The Sliding Window approach using Redis Sorted Sets directly addresses the distributed requirement with high precision. The explanation is clear and the trade-offs (memory usage) are correctly identified.",
-            recommendation: "Solution 2 is recommended for its precise handling of distributed state and clear awareness of the architectural trade-offs."
-          }
-        };
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ problem: text }),
+      });
 
-        setMessages(prev => [...prev, newMessage]);
-        setLoadingPhase(null);
-        setCurrentProblem('');
-      }, 2500);
-    }, 2500);
+      if (!response.ok) {
+        throw new Error('Network response was not ok');
+      }
+
+      // Backend logic evaluates to 'judging' roughly when the request returns before we parse if we want, 
+      // but realistically it just returns when all done. We'll simulate 'judging' briefly for UX or just rely on backend speed.
+      setLoadingPhase('judging');
+
+      const data = await response.json();
+      
+      const newMessage = {
+        problem: text,
+        solution_1: data.solution_1 || "No solution provided.",
+        solution_2: data.solution_2 || "No solution provided.",
+        judge: {
+          solution_1_score: data.judge?.solution_1_score || 0,
+          solution_2_score: data.judge?.solution_2_score || 0,
+          solution_1_reasoning: data.judge?.solution_1_reasoning || "",
+          solution_2_reasoning: data.judge?.solution_2_reasoning || "",
+          recommendation: data.judge?.solution_1_score >= data.judge?.solution_2_score ? "Solution 1 is recommended based on the higher score." : "Solution 2 is recommended based on the higher score."
+        }
+      };
+
+      setMessages(prev => [...prev, newMessage]);
+    } catch (error) {
+      console.error("Error generating solution:", error);
+      // Fallback message on error
+      const errorMessage = {
+        problem: text,
+        solution_1: "Error generating response.",
+        solution_2: "Error generating response.",
+        judge: {
+          solution_1_score: 0,
+          solution_2_score: 0,
+          solution_1_reasoning: "API call failed.",
+          solution_2_reasoning: "API call failed.",
+          recommendation: "Please try again later."
+        }
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setLoadingPhase(null);
+      setCurrentProblem('');
+    }
   };
 
   return (
